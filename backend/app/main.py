@@ -27,7 +27,19 @@ ocr_processor = OCRProcessor()
 @app.get("/dimensions/", response_model=List[schemas.Dimension])
 def get_dimensions(db: Session = Depends(get_db)):
     dimensions = db.query(models.Dimension).all()
-    return dimensions 
+    return dimensions
+
+@app.get("/part-types/", response_model=List[schemas.PartType])
+def get_part_types(db: Session = Depends(get_db)):
+    part_types = db.query(models.PartType).all()
+    return part_types
+
+@app.get("/part-types/{part_type_id}/dimensions", response_model=List[schemas.Dimension])
+def get_part_type_dimensions(part_type_id: int, db: Session = Depends(get_db)):
+    part_type = db.query(models.PartType).filter(models.PartType.id == part_type_id).first()
+    if not part_type:
+        raise HTTPException(status_code=404, detail="Part type not found")
+    return part_type.dimensions
 
 @app.post("/api/ocr/process")
 async def process_pdf(file: UploadFile = File(...)):

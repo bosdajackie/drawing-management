@@ -7,8 +7,16 @@ interface Dimension {
   unit: string;
 }
 
+interface PartType {
+  id: number;
+  name: string;
+  dimensions: Dimension[];
+}
+
 const PartSearch: React.FC = () => {
   const navigate = useNavigate();
+  const [partTypes, setPartTypes] = useState<PartType[]>([]);
+  const [selectedPartType, setSelectedPartType] = useState<number | null>(null);
   const [dimensions, setDimensions] = useState<Dimension[]>([]);
   const [dimensionValues, setDimensionValues] = useState<Record<number, string>>({});
   const [dimensionTols, setDimensionTols] = useState<Record<number, string>>({});
@@ -18,22 +26,14 @@ const PartSearch: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchDimensions = async () => {
+    const fetchPartTypes = async () => {
       try {
-        const response = await fetch('http://localhost:8000/dimensions/');
+        const response = await fetch('http://localhost:8000/part-types/');
         if (!response.ok) {
-          throw new Error('Failed to fetch dimensions');
+          throw new Error('Failed to fetch part types');
         }
         const data = await response.json();
-        setDimensions(data);
-        
-        // Initialize dimension values and tolerances
-        const initialValues: Record<number, string> = {};
-        data.forEach((dim: Dimension) => {
-          initialValues[dim.id] = '';
-        });
-        setDimensionValues(initialValues);
-        setDimensionTols(initialValues);
+        setPartTypes(data);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'An error occurred');
       } finally {
@@ -41,8 +41,33 @@ const PartSearch: React.FC = () => {
       }
     };
 
-    fetchDimensions();
+    fetchPartTypes();
   }, []);
+
+  useEffect(() => {
+    const fetchDimensions = async () => {
+      if (selectedPartType) {
+        try {
+          const response = await fetch(`http://localhost:8000/part-types/${selectedPartType}/dimensions`);
+          if (!response.ok) {
+            throw new Error('Failed to fetch dimensions');
+          }
+          const data = await response.json();
+          setDimensions(data);
+          
+          // Reset dimension values and tolerances when part type changes
+          setDimensionValues({});
+          setDimensionTols({});
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'An error occurred');
+        }
+      } else {
+        setDimensions([]);
+      }
+    };
+
+    fetchDimensions();
+  }, [selectedPartType]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,6 +94,11 @@ const PartSearch: React.FC = () => {
       }
     }
 
+    // Add part type if selected
+    if (selectedPartType) {
+      params.append('partType', selectedPartType.toString());
+    }
+
     // Navigate to results page with search parameters
     navigate({
       pathname: '/search/results',
@@ -77,7 +107,7 @@ const PartSearch: React.FC = () => {
   };
 
   if (isLoading) {
-    return <div className="text-center mt-8">Loading dimensions...</div>;
+    return <div className="text-center mt-8">Loading...</div>;
   }
 
   if (error) {
@@ -90,12 +120,29 @@ const PartSearch: React.FC = () => {
         <h1 className="text-3xl font-bold mb-8 text-center">Search for a part</h1>
         
         <form onSubmit={handleSearch} className="w-full max-w-2xl mx-auto space-y-4 mb-8">
+          {/* Part Type Selector */}
+          <div className="mb-6">
+            <select
+              value={selectedPartType || ''}
+              onChange={(e) => setSelectedPartType(e.target.value ? parseInt(e.target.value) : null)}
+              className="w-full p-2 rounded border border-gray-300"
+            >
+              <option value="">Select a part type</option>
+              {partTypes.map((type) => (
+                <option key={type.id} value={type.id}>
+                  {type.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Dynamic Dimension Fields */}
           {dimensions.map((dim) => (
             <div key={dim.id} className="flex gap-4">
               <input
                 type="text"
                 placeholder={`${dim.name} (${dim.unit})`}
-                value={dimensionValues[dim.id]}
+                value={dimensionValues[dim.id] || ''}
                 onChange={(e) => {
                   setDimensionValues(prev => ({
                     ...prev,
@@ -107,7 +154,7 @@ const PartSearch: React.FC = () => {
               <input
                 type="text"
                 placeholder="tol."
-                value={dimensionTols[dim.id]}
+                value={dimensionTols[dim.id] || ''}
                 onChange={(e) => {
                   setDimensionTols(prev => ({
                     ...prev,
