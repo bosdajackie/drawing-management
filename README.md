@@ -1,143 +1,150 @@
-# Drawing Management Software
+# Drawing Management Software (Internal)
 
-A web-based application for managing technical drawings and their associated dimensions. This system allows users to search for parts, view their dimensions, and manage technical drawings.
+Internal tool for managing technical drawings and their associated dimensions. This system allows engineers and technicians to search for parts, view their dimensions, and manage technical drawings.
 
-## Features
+## Quick Start
 
-- **Part Search**: Search parts by part number and part type
-- **Dimension Management**: 
-  - Each part type has its own set of dimensions
-  - Dimensions are displayed with their units
-  - Values can be stored for each dimension per part
-- **Drawing Viewer**: View technical drawings associated with parts
-- **Responsive UI**: Modern, responsive interface built with React and Tailwind CSS
-
-## Tech Stack
-
-### Frontend
-- React
-- TypeScript
-- Tailwind CSS
-- React Router for navigation
-
-### Backend
-- FastAPI (Python)
-- SQLAlchemy for ORM
-- SQLite database
-
-## Project Structure
-
-```
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   ├── pages/
-│   │   └── App.tsx
-│   ├── package.json
-│   └── tsconfig.json
-│
-└── backend/
-    ├── app/
-    │   ├── models.py      # Database models
-    │   ├── schemas.py     # Pydantic schemas
-    │   └── main.py        # FastAPI application
-    └── requirements.txt
-```
-
-## Setup
-
-### Backend Setup
-
-1. Navigate to the backend directory:
+1. Clone the repository:
    ```bash
+   git clone [internal-repo-url]
+   cd drawing-management-software
+   ```
+
+2. Import the database:
+   ```bash
+   # Navigate to backend directory
    cd backend
+   
+   # Create a new SQLite database from the dump
+   sqlite3 sql_app.db < database_dump.sql
    ```
 
-2. Create a virtual environment:
+3. Set up environment variables:
    ```bash
+   # In backend directory
+   cp .env.example .env
+   ```
+   Note: The default settings in `.env.example` are configured for internal use.
+
+## Detailed Setup
+
+### Backend Setup (Python 3.11+)
+
+1. Create and activate virtual environment:
+   ```bash
+   # In backend directory
    python -m venv venv
-   ```
-
-3. Activate the virtual environment:
-   - Windows:
-     ```bash
-     .\venv\Scripts\activate
-     ```
-   - Unix/MacOS:
-     ```bash
-     source venv/bin/activate
-     ```
-
-4. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-5. Run the backend server:
-   ```bash
-   uvicorn app.main:app --reload
-   ```
-
-### Frontend Setup
-
-1. Navigate to the frontend directory:
-   ```bash
-   cd frontend
+   
+   # Windows
+   .\venv\Scripts\activate
+   
+   # Unix/MacOS
+   source venv/bin/activate
    ```
 
 2. Install dependencies:
    ```bash
+   pip install -r requirements.txt
+   ```
+
+3. Start the backend server:
+   ```bash
+   uvicorn app.main:app --reload
+   ```
+   The API will be available at http://localhost:8000
+
+### Frontend Setup (Node.js 16+)
+
+1. Install dependencies:
+   ```bash
+   # In frontend directory
+   cd frontend
    npm install
    ```
 
-3. Start the development server:
+2. Start development server:
    ```bash
    npm start
    ```
+   The application will be available at http://localhost:3000
 
-## Database Schema
+## Database Structure
 
-### Tables
+### Included Tables
+- `part_types`: Part type definitions
+- `dimensions`: Standard dimension definitions
+- `part_type_dimensions`: Mapping between part types and their dimensions
+- `parts`: Part information
+- `dimension_values`: Actual dimension measurements
 
-- **part_types**: Stores different types of parts
-  - id: Primary key
-  - name: Name of the part type
+### Default Data
+The SQL dump includes:
+- Standard part types used in the company
+- Common dimensions and their units
+- Part type-dimension associations
+- Sample parts for testing
 
-- **dimensions**: Stores dimension definitions
-  - id: Primary key
-  - name: Name of the dimension
-  - unit: Unit of measurement
+## Usage Guidelines
 
-- **part_type_dimensions**: Associates dimensions with part types
-  - part_type_id: Foreign key to part_types
-  - dimension_id: Foreign key to dimensions
+### Part Search
+1. Select part type from dropdown
+2. Enter part number (optional)
+3. Results will show:
+   - Part number
+   - All dimensions associated with the part type
+   - Link to technical drawing
 
-- **parts**: Stores individual parts
-  - id: Primary key
-  - part_number: Unique identifier for the part
-  - description: Part description
-  - part_type_id: Foreign key to part_types
+### Adding New Parts
+1. Use the Part Entry form
+2. Required fields:
+   - Part number (must be unique)
+   - Part type
+   - All dimensions marked as required
 
-- **dimension_values**: Stores actual dimension values for parts
-  - id: Primary key
-  - part_id: Foreign key to parts
-  - dimension_id: Foreign key to dimensions
-  - value: The actual measurement value
+## Troubleshooting
 
-## API Endpoints
+### Common Issues
 
-- `GET /part-types/`: Get all part types with their dimensions
-- `GET /part-types/{part_type_id}/dimensions`: Get dimensions for a specific part type
-- `GET /search/`: Search parts with optional filters for part type and part number
+1. Database Connection Error
+   ```
+   Solution: Verify sql_app.db exists in backend directory
+   If missing: Re-run sqlite3 sql_app.db < database_dump.sql
+   ```
 
-## Contributing
+2. Missing Environment Variables
+   ```
+   Solution: Copy .env.example to .env
+   Default values are configured for internal network
+   ```
 
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
+3. Port Conflicts
+   ```
+   Backend (8000): uvicorn app.main:app --port [new-port] --reload
+   Frontend (3000): Update package.json "start" script with PORT=[new-port]
+   ```
 
-## License
+## Internal Support
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+- Technical Issues: IT Support Desk (ext. 555)
+- Data Questions: Engineering Database Team (ext. 556)
+- Feature Requests: Software Development Team (ext. 557)
+
+## Maintenance
+
+### Database Backup
+The database is automatically backed up daily to the internal server.
+Manual backup:
+```bash
+# In backend directory
+sqlite3 sql_app.db .dump > backup_$(date +%Y%m%d).sql
+```
+
+### Updating Part Types/Dimensions
+New part types and dimensions should be added through the database team to ensure consistency across all systems.
+
+## Security Notes
+
+- Do not share the .env file or database credentials
+- All API requests are logged for audit purposes
+- Drawing files are stored on internal secure storage
+- Access is restricted to internal network only 
