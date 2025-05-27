@@ -7,9 +7,16 @@ interface Dimension {
   unit: string;
 }
 
+interface PartType {
+  id: number;
+  name: string;
+  dimensions: Dimension[]; // This will contain the dimensions associated with the part type
+}
+
 interface SearchResult {
   partNumber: string;
-  dimensions: Record<number, string>; // Changed to map dimension IDs to values
+  partTypeId: number;
+  dimensions: Record<number, string>;
   drawingUrl: string;
 }
 
@@ -17,93 +24,48 @@ const SearchResults: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages] = useState(5); // This would come from your API
-  const [dimensions, setDimensions] = useState<Dimension[]>([]);
+  const [totalPages] = useState(5);
+  const [partTypes, setPartTypes] = useState<PartType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [results, setResults] = useState<SearchResult[]>([]);
 
-  // Fetch dimensions from the API
+  // Fetch part types with their associated dimensions
   useEffect(() => {
-    const fetchDimensions = async () => {
+    const fetchData = async () => {
       try {
-        const response = await fetch('http://localhost:8000/dimensions/');
-        if (!response.ok) {
-          throw new Error('Failed to fetch dimensions');
+        // Get part types
+        const partTypesResponse = await fetch('http://localhost:8000/part-types/');
+        if (!partTypesResponse.ok) {
+          throw new Error('Failed to fetch part types');
         }
-        const data = await response.json();
-        setDimensions(data);
+        const partTypesData = await partTypesResponse.json();
+        setPartTypes(partTypesData);
+
+        // Get search results
+        const params = new URLSearchParams();
+        const partTypeId = searchParams.get('partType');
+        const partNumber = searchParams.get('partNumber');
+        
+        if (partTypeId) params.append('part_type_id', partTypeId);
+        if (partNumber) params.append('part_number', partNumber);
+        
+        console.log('Searching with params:', params.toString());
+        const searchResponse = await fetch(`http://localhost:8000/search/?${params.toString()}`);
+        if (!searchResponse.ok) {
+          throw new Error('Failed to fetch search results');
+        }
+        const searchData = await searchResponse.json();
+        console.log('Search results:', searchData);
+        setResults(searchData);
       } catch (error) {
-        console.error('Error fetching dimensions:', error);
+        console.error('Error fetching data:', error);
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchDimensions();
-  }, []);
-
-  // Mock data - replace with actual API call
-  const [results] = useState<SearchResult[]>([
-    {
-      partNumber: 'ABC123',
-      dimensions: {
-        1: '47.5',
-        2: '30.0',
-        3: '161.5',
-        4: '42.3'
-      },
-      drawingUrl: '/placeholder-drawing.png'
-    },
-    {
-      partNumber: 'DEF456',
-      dimensions: {
-        1: '50.0',
-        2: '32.5',
-        3: '158.0',
-        4: '44.0'
-      },
-      drawingUrl: '/placeholder-drawing.png'
-    },
-    {
-      partNumber: 'GHI789',
-      dimensions: {
-        1: '45.0',
-        2: '28.5',
-        3: '160.0',
-        4: '41.5'
-      },
-      drawingUrl: '/placeholder-drawing.png'
-    },
-    {
-      partNumber: 'JKL012',
-      dimensions: {
-        1: '48.5',
-        2: '31.0',
-        3: '159.5',
-        4: '43.0'
-      },
-      drawingUrl: '/placeholder-drawing.png'
-    },
-    {
-      partNumber: 'MNO345',
-      dimensions: {
-        1: '46.0',
-        2: '29.5',
-        3: '162.0',
-        4: '42.0'
-      },
-      drawingUrl: '/placeholder-drawing.png'
-    },
-    {
-      partNumber: 'PQR678',
-      dimensions: {
-        1: '49.0',
-        2: '30.5',
-        3: '160.5',
-        4: '43.5'
-      },
-      drawingUrl: '/placeholder-drawing.png'
-    }
-  ]);
+    fetchData();
+  }, [searchParams]);
 
   const handleViewDrawing = (partNumber: string) => {
     navigate(`/part/${partNumber}`);
@@ -113,55 +75,67 @@ const SearchResults: React.FC = () => {
     return <div className="text-center mt-8">Loading...</div>;
   }
 
-  return (
-    <div className="w-full max-w-6xl mx-auto px-4">
-      <h1 className="text-3xl font-bold mb-8 text-center">Search Results</h1>
-      
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="bg-gray-50 border-b">
-                <th className="px-6 py-4 text-left text-sm font-medium text-gray-500">part number</th>
-                {dimensions.map((dim) => (
-                  <th key={dim.id} className="px-6 py-4 text-left text-sm font-medium text-gray-500">
-                    {dim.name} ({dim.unit})
-                  </th>
-                ))}
-                <th className="px-6 py-4 text-left text-sm font-medium text-gray-500">view drawing</th>
-              </tr>
-            </thead>
-            <tbody>
-              {results.map((result, idx) => (
-                <tr 
-                  key={result.partNumber}
-                  className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}
-                >
-                  <td className="px-6 py-4 text-sm text-gray-900">{result.partNumber}</td>
-                  {dimensions.map((dim) => (
-                    <td key={dim.id} className="px-6 py-4 text-sm text-gray-900">
-                      {result.dimensions[dim.id] ? `${result.dimensions[dim.id]} ${dim.unit}` : '-'}
-                    </td>
-                  ))}
-                  <td className="px-6 py-4 text-sm">
-                    <button
-                      onClick={() => handleViewDrawing(result.partNumber)}
-                      className="inline-block"
+  // Get the selected part type
+  const selectedPartTypeId = searchParams.get('partType');
+  const selectedPartType = selectedPartTypeId 
+    ? partTypes.find(pt => pt.id === Number(selectedPartTypeId))
+    : null;
+
+  // If we have a selected part type, show its dimensions even if there are no results
+  if (selectedPartType) {
+    return (
+      <div className="w-full max-w-6xl mx-auto px-4">
+        <h1 className="text-3xl font-bold mb-8 text-center">Search Results</h1>
+        
+        <div className="mb-8">
+          <h2 className="text-xl font-semibold mb-4">{selectedPartType.name}</h2>
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-gray-50 border-b">
+                    <th className="px-6 py-4 text-left text-sm font-medium text-gray-500">Part Number</th>
+                    {selectedPartType.dimensions.map((dim) => (
+                      <th key={dim.id} className="px-6 py-4 text-left text-sm font-medium text-gray-500">
+                        {dim.name} ({dim.unit})
+                      </th>
+                    ))}
+                    <th className="px-6 py-4 text-left text-sm font-medium text-gray-500">View Drawing</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {results.map((result, idx) => (
+                    <tr 
+                      key={result.partNumber}
+                      className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}
                     >
-                      <img 
-                        src={result.drawingUrl} 
-                        alt={`Drawing for part ${result.partNumber}`}
-                        className="w-16 h-16 object-cover border border-gray-200 rounded"
-                      />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      <td className="px-6 py-4 text-sm text-gray-900">{result.partNumber}</td>
+                      {selectedPartType.dimensions.map((dim) => (
+                        <td key={dim.id} className="px-6 py-4 text-sm text-gray-900">
+                          {result.dimensions[dim.id] || '-'}
+                        </td>
+                      ))}
+                      <td className="px-6 py-4 text-sm">
+                        <button
+                          onClick={() => handleViewDrawing(result.partNumber)}
+                          className="inline-block"
+                        >
+                          <img 
+                            src={result.drawingUrl} 
+                            alt={`Drawing for part ${result.partNumber}`}
+                            className="w-16 h-16 object-cover border border-gray-200 rounded"
+                          />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
 
-        <div className="p-4 border-t flex items-center justify-between">
+        <div className="mt-4 p-4 border-t flex items-center justify-between bg-white rounded-lg shadow">
           <div className="text-sm text-gray-500">
             Page {currentPage} of {totalPages}
           </div>
@@ -190,6 +164,16 @@ const SearchResults: React.FC = () => {
             </button>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  // If no part type is selected or no dimensions found
+  return (
+    <div className="w-full max-w-6xl mx-auto px-4">
+      <h1 className="text-3xl font-bold mb-8 text-center">Search Results</h1>
+      <div className="text-center text-gray-500">
+        No results found. Please select a part type to view its dimensions.
       </div>
     </div>
   );

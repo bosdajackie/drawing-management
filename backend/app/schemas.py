@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 class DimensionBase(BaseModel):
     name: str
@@ -36,6 +36,15 @@ class Part(PartBase):
 class DimensionValue(BaseModel):
     dimension_id: int
     value: str
+
+    class Config:
+        from_attributes = True
+
+class SearchResult(BaseModel):
+    partNumber: str
+    partTypeId: int
+    dimensions: Dict[int, str]
+    drawingUrl: str
 
     class Config:
         from_attributes = True 

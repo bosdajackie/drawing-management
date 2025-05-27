@@ -8,7 +8,9 @@ class PartType(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
     parts = relationship("Part", back_populates="part_type")
-    dimensions = relationship("Dimension", secondary="part_type_dimensions")
+    dimensions = relationship("Dimension", 
+                            secondary="part_type_dimensions",
+                            back_populates="part_types")
 
 class Dimension(Base):
     __tablename__ = "dimensions"
@@ -16,7 +18,9 @@ class Dimension(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
     unit = Column(String(20), nullable=False)
-    part_types = relationship("PartType", secondary="part_type_dimensions")
+    part_types = relationship("PartType", 
+                            secondary="part_type_dimensions",
+                            back_populates="dimensions")
 
 class Part(Base):
     __tablename__ = "parts"

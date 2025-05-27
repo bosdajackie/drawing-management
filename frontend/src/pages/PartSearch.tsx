@@ -137,34 +137,43 @@ const PartSearch: React.FC = () => {
           </div>
 
           {/* Dynamic Dimension Fields */}
-          {dimensions.map((dim) => (
-            <div key={dim.id} className="flex gap-4">
-              <input
-                type="text"
-                placeholder={`${dim.name} (${dim.unit})`}
-                value={dimensionValues[dim.id] || ''}
-                onChange={(e) => {
-                  setDimensionValues(prev => ({
-                    ...prev,
-                    [dim.id]: e.target.value
-                  }));
-                }}
-                className="flex-1 p-2 rounded border border-gray-300"
-              />
-              <input
-                type="text"
-                placeholder="tol."
-                value={dimensionTols[dim.id] || ''}
-                onChange={(e) => {
-                  setDimensionTols(prev => ({
-                    ...prev,
-                    [dim.id]: e.target.value
-                  }));
-                }}
-                className="w-20 p-2 rounded border border-gray-300"
-              />
-            </div>
-          ))}
+          {dimensions.map((dim) => {
+            const selectedType = partTypes.find(type => type.id === selectedPartType);
+            const showTolerance = selectedType && 
+              selectedType.name !== "Repair Kit" && 
+              selectedType.name !== "Knuckle Assembly";
+            
+            return (
+              <div key={dim.id} className="flex gap-4">
+                <input
+                  type="text"
+                  placeholder={`${dim.name} (${dim.unit})`}
+                  value={dimensionValues[dim.id] || ''}
+                  onChange={(e) => {
+                    setDimensionValues(prev => ({
+                      ...prev,
+                      [dim.id]: e.target.value
+                    }));
+                  }}
+                  className="flex-1 p-2 rounded border border-gray-300"
+                />
+                {showTolerance && (
+                  <input
+                    type="text"
+                    placeholder="tol."
+                    value={dimensionTols[dim.id] || ''}
+                    onChange={(e) => {
+                      setDimensionTols(prev => ({
+                        ...prev,
+                        [dim.id]: e.target.value
+                      }));
+                    }}
+                    className="w-20 p-2 rounded border border-gray-300"
+                  />
+                )}
+              </div>
+            );
+          })}
 
           <div className="flex items-center gap-4 my-6">
             <div className="flex-1 h-px bg-gray-300"></div>
@@ -175,18 +184,22 @@ const PartSearch: React.FC = () => {
           <div className="flex gap-4">
             <input
               type="text"
-              placeholder="part number"
+              placeholder="Part Number"
               value={partNumber}
               onChange={(e) => setPartNumber(e.target.value)}
               className="flex-1 p-2 rounded border border-gray-300"
             />
-            <input
-              type="text"
-              placeholder="tol."
-              value={partTol}
-              onChange={(e) => setPartTol(e.target.value)}
-              className="w-20 p-2 rounded border border-gray-300"
-            />
+            {/* Only show part tolerance if not Repair Kits or Knuckle Assembly */}
+            {(!selectedPartType || (partTypes.find(type => type.id === selectedPartType)?.name !== "Repair Kits" && 
+                                  partTypes.find(type => type.id === selectedPartType)?.name !== "Knuckle Assembly")) && (
+              <input
+                type="text"
+                placeholder="tol."
+                value={partTol}
+                onChange={(e) => setPartTol(e.target.value)}
+                className="w-20 p-2 rounded border border-gray-300"
+              />
+            )}
           </div>
 
           <button
