@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Document, Page, pdfjs } from 'react-pdf';
+import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
 
@@ -22,12 +23,29 @@ const DrawingLabelingPage: React.FC = () => {
   const [currentFileIndex, setCurrentFileIndex] = useState<number>(0);
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState<number>(1);
+  const [pdfScale, setPdfScale] = useState<number>(1);
+  const [rotation, setRotation] = useState<number>(0);
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [isDrawing, setIsDrawing] = useState(false);
   const [rectangles, setRectangles] = useState<Rectangle[]>([]);
   const [currentRect, setCurrentRect] = useState<Rectangle | null>(null);
-  
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Calculate scale when PDF file changes
+  React.useEffect(() => {
+    if (pdfFiles[currentFileIndex]) {
+      const loadingTask = pdfjs.getDocument(URL.createObjectURL(pdfFiles[currentFileIndex]));
+      loadingTask.promise.then((doc: PDFDocumentProxy) => {
+        doc.getPage(1).then((page: PDFPageProxy) => {
+          const viewport = page.getViewport({ scale: 1 });
+          const containerWidth = canvasRef.current?.parentElement?.parentElement?.parentElement?.clientWidth || window.innerWidth * 0.8;
+          console.log(viewport.width, containerWidth);
+          setPdfScale(containerWidth / viewport.width);
+        });
+      });
+    }
+  }, [currentFileIndex, pdfFiles]);
 
   // Add keyboard event listener for undo
   React.useEffect(() => {
@@ -164,11 +182,10 @@ const DrawingLabelingPage: React.FC = () => {
           <div className="flex gap-4">
             <button
               onClick={() => setIsDrawingMode(!isDrawingMode)}
-              className={`px-4 py-2 rounded ${
-                isDrawingMode 
-                  ? 'bg-green-500 text-white' 
+              className={`px-4 py-2 rounded ${isDrawingMode
+                  ? 'bg-green-500 text-white'
                   : 'bg-gray-200 hover:bg-gray-300'
-              }`}
+                }`}
               title={isDrawingMode ? "Drawing Mode On (Ctrl+Z to undo)" : "Drawing Mode Off"}
             >
               {isDrawingMode ? 'Drawing Mode On' : 'Drawing Mode Off'}
@@ -188,40 +205,41 @@ const DrawingLabelingPage: React.FC = () => {
             </button>
           </div>
         </div>
+        <div className="mb-4 flex gap-4 items-center justify-center">
+          <select
+            value={currentFileIndex}
+            onChange={handleFileChange}
+            className="px-3 py-2 border rounded"
+          >
+            {pdfFiles.map((file, index) => (
+              <option key={index} value={index}>
+                {file.name}
+              </option>
+            ))}
+          </select>
 
-        <div className="border rounded-lg p-6 bg-white shadow-lg mb-6">
+          <button
+            onClick={() => setPageNumber(prev => Math.max(1, prev - 1))}
+            disabled={pageNumber <= 1}
+            className="px-4 py-2 bg-blue-500 text-white rounded disabled:bg-gray-300"
+          >
+            Previous
+          </button>
+          <span className="py-2">
+            Page {pageNumber} of {numPages}
+          </span>
+          <button
+            onClick={() => setPageNumber(prev => Math.min(numPages, prev + 1))}
+            disabled={pageNumber >= numPages}
+            className="px-4 py-2 bg-blue-500 text-white rounded disabled:bg-gray-300"
+          >
+            Next
+          </button>
+        </div>
+
+        <div className="border rounded-lg p-6 bg-white shadow-lg mb-6 h-[calc(100vh-12rem)] overflow-y-auto">
           <div className="flex flex-col items-center">
-            <div className="mb-4 flex gap-4 items-center">
-              <select
-                value={currentFileIndex}
-                onChange={handleFileChange}
-                className="px-3 py-2 border rounded"
-              >
-                {pdfFiles.map((file, index) => (
-                  <option key={index} value={index}>
-                    {file.name}
-                  </option>
-                ))}
-              </select>
 
-              <button
-                onClick={() => setPageNumber(prev => Math.max(1, prev - 1))}
-                disabled={pageNumber <= 1}
-                className="px-4 py-2 bg-blue-500 text-white rounded disabled:bg-gray-300"
-              >
-                Previous
-              </button>
-              <span className="py-2">
-                Page {pageNumber} of {numPages}
-              </span>
-              <button
-                onClick={() => setPageNumber(prev => Math.min(numPages, prev + 1))}
-                disabled={pageNumber >= numPages}
-                className="px-4 py-2 bg-blue-500 text-white rounded disabled:bg-gray-300"
-              >
-                Next
-              </button>
-            </div>
 
             <div className="flex justify-center">
               <div className="relative">
@@ -233,14 +251,17 @@ const DrawingLabelingPage: React.FC = () => {
                   <Page
                     key={`page_${pageNumber}_${currentFileIndex}`}
                     pageNumber={pageNumber}
-                    className="bg-white"
-                    onLoadSuccess={({ width, height }) => {
+                    className="bg-black"
+                    scale={pdfScale}
+                    onLoadSuccess={({ width }) => {
                       if (canvasRef.current) {
-                        const pdfElement = canvasRef.current.parentElement?.querySelector('.react-pdf__Page');
+                        const pdfElement = canvasRef.current.parentElement?.querySelector('.react-pdf__Page') as HTMLElement;
                         if (pdfElement) {
                           const { width: renderedWidth, height: renderedHeight } = pdfElement.getBoundingClientRect();
                           canvasRef.current.width = renderedWidth;
                           canvasRef.current.height = renderedHeight;
+                          canvasRef.current.style.width = `${renderedWidth}px`;
+                          canvasRef.current.style.height = `${renderedHeight}px`;
                           drawRectangles();
                         }
                       }
@@ -250,9 +271,10 @@ const DrawingLabelingPage: React.FC = () => {
                 <canvas
                   ref={canvasRef}
                   className="absolute top-0 left-0"
-                  style={{ 
+                  style={{
                     cursor: isDrawingMode ? 'crosshair' : 'default',
-                    pointerEvents: isDrawingMode ? 'auto' : 'none'
+                    pointerEvents: isDrawingMode ? 'auto' : 'none',
+                    zIndex: 10
                   }}
                   onMouseDown={startDrawing}
                   onMouseMove={draw}
