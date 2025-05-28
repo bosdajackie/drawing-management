@@ -40,7 +40,6 @@ const DrawingLabelingPage: React.FC = () => {
         doc.getPage(1).then((page: PDFPageProxy) => {
           const viewport = page.getViewport({ scale: 1 });
           const containerWidth = canvasRef.current?.parentElement?.parentElement?.parentElement?.clientWidth || window.innerWidth * 0.8;
-          console.log(viewport.width, containerWidth);
           setPdfScale(containerWidth / viewport.width);
         });
       });
@@ -141,6 +140,13 @@ const DrawingLabelingPage: React.FC = () => {
     if (!isDrawingMode || !currentRect) return;
 
     setIsDrawing(false);
+    console.log('New bounding box:', {
+      x: Math.round(currentRect.startX),
+      y: Math.round(currentRect.startY),
+      width: Math.round(currentRect.width),
+      height: Math.round(currentRect.height),
+      scale: currentRect.scale
+    });
     setRectangles(prev => [...prev, currentRect]);
     setCurrentRect(null);
   };
@@ -156,7 +162,7 @@ const DrawingLabelingPage: React.FC = () => {
 
     [...rectangles, currentRect].filter(Boolean).forEach(rect => {
       if (!rect) return;
-      ctx.strokeStyle = '#00ff00';
+      ctx.strokeStyle = '#ff0000';
       ctx.lineWidth = 2;
       ctx.strokeRect(rect.startX, rect.startY, rect.width, rect.height);
     });
