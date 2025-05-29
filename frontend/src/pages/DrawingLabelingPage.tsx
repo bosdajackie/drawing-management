@@ -579,10 +579,6 @@ const DrawingLabelingPage: React.FC = () => {
           {rectangles.map((rect, index) => (
             <div key={index} className="p-4 border rounded">
               <h3 className="font-bold">Rectangle {index + 1}</h3>
-              <div className="text-sm text-gray-600 mb-2">
-                PDF Coordinates: ({Math.round(rect.startX/rect.scale)}, {Math.round(rect.startY/rect.scale)})
-                Size: {Math.round(rect.width/rect.scale)}x{Math.round(rect.height/rect.scale)}
-              </div>
               {rect.image && (
                 <div className="mb-4">
                   <p className="font-semibold mb-2">Extracted Region:</p>
@@ -597,6 +593,15 @@ const DrawingLabelingPage: React.FC = () => {
                   />
                   <p className="font-semibold mb-2">GPT Response:</p>
                   <pre className="text-sm text-gray-600 p-2 bg-gray-100 rounded">
+                    <div className="text-sm text-gray-600 mb-2">
+                      <p>Measurement Type: {rect.parsed_response?.measurement_type}</p>
+                      <p>Value: {rect.parsed_response?.value}</p>
+                      <p>Unit: {rect.parsed_response?.unit}</p>
+                      <p>Tolerance Plus: {rect.parsed_response?.tolerance_plus}</p>
+                      <p>Tolerance Minus: {rect.parsed_response?.tolerance_minus}</p>
+                      <p>Location Note: {rect.parsed_response?.location_note}</p>
+                      <p>Notes: {rect.parsed_response?.notes}</p>
+                    </div>
                     {JSON.stringify(rect.parsed_response, null, 2)}
                   </pre>
                 </div>

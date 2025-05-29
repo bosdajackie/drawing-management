@@ -42,19 +42,34 @@ class BoundingBox(BaseModel):
     scale: float
     pageNumber: int
 
-class DrawingMeasurement(BaseModel):
-    measurement_type: Literal[
-        "linear", "diameter", "radius", "angle", "thread", "tolerance", "surface_finish"
+class GDTFeatureControlFrame(BaseModel):
+    symbol: Literal[
+        "flatness", "straightness", "cylindricity",
+        "parallelism", "perpendicularity", "angularity",
+        "position", "concentricity", "symmetry",
+        "circular_runout", "total_runout", "profile_of_line", "profile_of_surface"
     ]
-    value: float                           # e.g., 25.4
-    unit: Literal["mm", "in", "deg"]       # common units
-    tolerance_plus: Optional[float] = None # upper limit tolerance (e.g., +0.1)
-    tolerance_minus: Optional[float] = None# lower limit tolerance (e.g., -0.05)
-    location_note: Optional[str] = None    # e.g., "center of hole", "from left edge"
-    notes: Optional[str] = None            # any extra context
+    tolerance: float
+    datum_reference_frame: Optional[list[str]] = None  # e.g. ["A", "B", "C"]
+    unit: Optional[Literal["mm", "in"]] = "mm"
+
+class DrawingMeasurement(BaseModel):
+    feature_name: str
+    measurement_type: Literal[
+        "linear", "diameter", "radius", "angle", "thread", "tolerance",
+        "surface_finish", "gd&t"
+    ]
+    value: Optional[float] = None  # Only for non-GD&T types
+    unit: Optional[Literal["mm", "in", "deg"]] = "mm"
+    tolerance_plus: Optional[float] = None
+    tolerance_minus: Optional[float] = None
+    location_note: Optional[str] = None
+    notes: Optional[str] = None
+    gdt: Optional[GDTFeatureControlFrame] = None
 
 process_region_prompt = """
 You are a CAD designer. You are given a screenshot of a dimension within an engineering drawing for an aftermarket car part. Your job is to extract the dimension and its properties from the image, and return it using the Structured Output function. Keep in mind the image might be rotated, as by the nature of engineering drawings. Do not get confused by rotated text. First correctly identify its orientation then extract the dimension.
+The measurement may be a GD&T dimension. If that is the case, the measurement_type will be "gd&t". There is a nested 'gdt' field in the structured output that will contain the gdt properties symbol, tolerance, unit, and optional datum_reference_frame.
 """
 
 @app.get("/dimensions/", response_model=List[schemas.Dimension])
