@@ -1,5 +1,10 @@
 {
-  "dependencies": {
-    "@react-pdf/renderer": "^4.3.0"
+  "name": "drawing-management-software",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "cd frontend && npm run start",
+    "install": "cd frontend && npm install",
+    "build": "cd frontend && npm run build"
   }
 }

@@ -51,6 +51,11 @@ interface OCRResults {
     };
     scale_factor: number;
   };
+  image?: {
+    base64: string;
+    width: number;
+    height: number;
+  };
 }
 
 interface Rectangle {
@@ -61,7 +66,12 @@ interface Rectangle {
   scale: number;
   pageNumber?: number;
   processed?: boolean;
-  ocrResults?: OCRResults;
+  image?: {
+    base64: string;
+    width: number;
+    height: number;
+  };
+  gpt_response?: any;
   originalScale: number;
 }
 
@@ -209,10 +219,14 @@ const DrawingLabelingPage: React.FC = () => {
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
+    // Get PDF dimensions with fallback
+    const pdfWidth = originalPdfDimensions?.width ?? 1;
+    const pdfHeight = originalPdfDimensions?.height ?? 1;
+
     setIsDrawing(true);
     setCurrentRect({
-      startX: x / pdfScale,
-      startY: y / pdfScale,
+      startX: x / (pdfScale * pdfWidth),  // Convert to normalized coordinates (0-1)
+      startY: y / (pdfScale * pdfHeight),
       width: 0,
       height: 0,
       scale: pdfScale,
@@ -221,7 +235,7 @@ const DrawingLabelingPage: React.FC = () => {
   };
 
   const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawingMode || !isDrawing || !currentRect || !canvasRef.current) return;
+    if (!isDrawingMode || !isDrawing || !currentRect || !canvasRef.current || !originalPdfDimensions) return;
 
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
@@ -232,8 +246,8 @@ const DrawingLabelingPage: React.FC = () => {
       if (!prev) return null;
       return {
         ...prev,
-        width: (x / pdfScale) - prev.startX,
-        height: (y / pdfScale) - prev.startY
+        width: (x / (pdfScale * originalPdfDimensions.width)) - prev.startX,
+        height: (y / (pdfScale * originalPdfDimensions.height)) - prev.startY
       };
     });
   };
@@ -244,51 +258,38 @@ const DrawingLabelingPage: React.FC = () => {
     setIsProcessing(true);
     setError(null);
 
-    // Add padding to the unscaled coordinates (in PDF points)
-    // Using 10 points as padding (about 3.5mm at 72 DPI)
-    const PADDING = 0;
+    // Convert normalized coordinates to PDF points
+    const pdfCoords = {
+      startX: rectangle.startX * originalPdfDimensions.width,
+      startY: rectangle.startY * originalPdfDimensions.height,
+      width: rectangle.width * originalPdfDimensions.width,
+      height: rectangle.height * originalPdfDimensions.height,
+      pageNumber
+    };
 
     // Normalize coordinates to handle rectangles drawn in any direction
     const normalizedRect = {
-      startX: rectangle.width < 0 ? rectangle.startX + rectangle.width : rectangle.startX,
-      startY: rectangle.height < 0 ? rectangle.startY + rectangle.height : rectangle.startY,
-      width: Math.abs(rectangle.width),
-      height: Math.abs(rectangle.height)
+      startX: pdfCoords.width < 0 ? pdfCoords.startX + pdfCoords.width : pdfCoords.startX,
+      startY: pdfCoords.height < 0 ? pdfCoords.startY + pdfCoords.height : pdfCoords.startY,
+      width: Math.abs(pdfCoords.width),
+      height: Math.abs(pdfCoords.height)
     };
 
     const unscaledCoords = {
-      startX: Math.max(0, (normalizedRect.startX / pdfScale) - PADDING),
-      startY: Math.max(0, (normalizedRect.startY / pdfScale) - PADDING),
+      startX: Math.max(0, normalizedRect.startX),
+      startY: Math.max(0, normalizedRect.startY),
       width: Math.min(
-        originalPdfDimensions.width - (normalizedRect.startX / pdfScale),
-        (normalizedRect.width / pdfScale) + (PADDING * 2)
+        originalPdfDimensions.width - normalizedRect.startX,
+        normalizedRect.width
       ),
       height: Math.min(
-        originalPdfDimensions.height - (normalizedRect.startY / pdfScale),
-        (normalizedRect.height / pdfScale) + (PADDING * 2)
+        originalPdfDimensions.height - normalizedRect.startY,
+        normalizedRect.height
       ),
       pageNumber
     };
 
-    console.log('Rectangle Coordinates:', {
-      originalCoords: {
-        startX: rectangle.startX,
-        startY: rectangle.startY,
-        width: rectangle.width,
-        height: rectangle.height,
-      },
-      normalizedCoords: normalizedRect,
-      displayCoords: {
-        startX: normalizedRect.startX,
-        startY: normalizedRect.startY,
-        width: normalizedRect.width,
-        height: normalizedRect.height,
-        scale: pdfScale
-      },
-      originalPdfCoords: unscaledCoords,
-      pdfDimensions: originalPdfDimensions,
-      padding: PADDING
-    });
+    console.log('Sending region extraction request with coordinates:', unscaledCoords);
 
     try {
       const formData = new FormData();
@@ -302,37 +303,32 @@ const DrawingLabelingPage: React.FC = () => {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to process OCR');
+        throw new Error(errorData.detail || 'Failed to process region');
       }
 
       const data = await response.json();
-      console.log('Received OCR results:', data);
+      console.log('Received response:', data);
       
       setRectangles(prev => 
         prev.map(rect => 
           rect === rectangle 
             ? {
                 ...rect,
-                ocrResults: data.results,
+                image: data.image,
+                gpt_response: data.gpt_response,
                 processed: true
               }
             : rect
         )
       );
     } catch (err) {
-      console.error('OCR processing error:', err);
+      console.error('Processing error:', err);
       setError(err instanceof Error ? err.message : 'An error occurred');
       setRectangles(prev => 
         prev.map(rect => 
           rect === rectangle 
             ? {
                 ...rect,
-                ocrResults: {
-                  text: 'Error processing OCR',
-                  detailed_text: [],
-                  dimensions: [],
-                  region: { x: 0, y: 0, width: 0, height: 0 }
-                },
                 processed: true
               }
             : rect
@@ -357,21 +353,27 @@ const DrawingLabelingPage: React.FC = () => {
 
   const drawRectangles = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas || !originalPdfDimensions) return;
+    
+    // Type guard to ensure we have width and height
+    if (typeof originalPdfDimensions.width === 'undefined' || 
+        typeof originalPdfDimensions.height === 'undefined') return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+
+    const { width: pdfWidth, height: pdfHeight } = originalPdfDimensions;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     [...rectangles, currentRect].filter(Boolean).forEach(rect => {
       if (!rect) return;
       
-      // Draw the rectangle using scaled coordinates
-      const scaledX = rect.startX * pdfScale;
-      const scaledY = rect.startY * pdfScale;
-      const scaledWidth = rect.width * pdfScale;
-      const scaledHeight = rect.height * pdfScale;
+      // Convert normalized coordinates back to screen space
+      const scaledX = rect.startX * pdfWidth * pdfScale;
+      const scaledY = rect.startY * pdfHeight * pdfScale;
+      const scaledWidth = rect.width * pdfWidth * pdfScale;
+      const scaledHeight = rect.height * pdfHeight * pdfScale;
       
       // Draw the rectangle
       ctx.strokeStyle = rect.processed ? '#00ff00' : '#ff0000'; // Green if processed, red if not
@@ -382,12 +384,12 @@ const DrawingLabelingPage: React.FC = () => {
       ctx.fillStyle = '#000000';
       ctx.font = '12px Arial';
       ctx.fillText(
-        `(${Math.round(rect.startX)},${Math.round(rect.startY)})`,
+        `(${(rect.startX * pdfWidth).toFixed(1)},${(rect.startY * pdfHeight).toFixed(1)})`,
         scaledX,
         scaledY - 5
       );
     });
-  }, [rectangles, currentRect, pdfScale]);
+  }, [rectangles, currentRect, pdfScale, originalPdfDimensions]);
 
   // Update useEffect to include drawRectangles in dependencies
   React.useEffect(() => {
@@ -571,49 +573,29 @@ const DrawingLabelingPage: React.FC = () => {
                 PDF Coordinates: ({Math.round(rect.startX/rect.scale)}, {Math.round(rect.startY/rect.scale)})
                 Size: {Math.round(rect.width/rect.scale)}x{Math.round(rect.height/rect.scale)}
               </div>
-              {rect.ocrResults?.debug_info && (
-                <div className="text-xs font-mono bg-gray-100 p-2 rounded mb-2">
-                  <div>Image size: {rect.ocrResults.debug_info.image_size.width}x{rect.ocrResults.debug_info.image_size.height}</div>
-                  <div>Calculated region: ({rect.ocrResults.debug_info.calculated_coords.x}, {rect.ocrResults.debug_info.calculated_coords.y}) - {rect.ocrResults.debug_info.calculated_coords.width}x{rect.ocrResults.debug_info.calculated_coords.height}</div>
-                  <div>Scale factor: {rect.ocrResults.debug_info.scale_factor}</div>
+              {rect.image && (
+                <div className="mb-4">
+                  <p className="font-semibold mb-2">Extracted Region:</p>
+                  <img 
+                    src={`data:image/png;base64,${rect.image.base64}`}
+                    alt={`Extracted region ${index + 1}`}
+                    className="border rounded shadow-sm"
+                    style={{
+                      maxWidth: '100%',
+                      height: 'auto'
+                    }}
+                  />
+                  <p className="font-semibold mb-2">GPT Response:</p>
+                  <pre className="text-sm text-gray-600 p-2 bg-gray-100 rounded">
+                    {JSON.stringify(rect.gpt_response, null, 2)}
+                  </pre>
                 </div>
               )}
-              {rect.ocrResults ? (
-                <div>
-                  <p className="font-semibold mt-2">Detected Text:</p>
-                  <p className="font-mono bg-gray-50 p-2 rounded whitespace-pre-wrap">{rect.ocrResults.text}</p>
-                  
-                  <p className="font-semibold mt-4">Detailed Text:</p>
-                  <div className="space-y-2">
-                    {rect.ocrResults.detailed_text.map((item, idx) => (
-                      <div key={idx} className="bg-gray-50 p-2 rounded">
-                        <span className="font-mono">{item.text}</span>
-                        <span className="text-sm text-gray-500 ml-2">
-                          (confidence: {item.confidence.toFixed(1)}%)
-                        </span>
-                        <div className="text-xs text-gray-400">
-                          at ({item.coordinates.x}, {item.coordinates.y})
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {rect.ocrResults.dimensions.length > 0 && (
-                    <>
-                      <p className="font-semibold mt-4">Detected Dimensions:</p>
-                      <ul className="list-disc list-inside">
-                        {rect.ocrResults.dimensions.map((dim, dimIndex) => (
-                          <li key={dimIndex}>
-                            {dim.value} (confidence: {dim.confidence.toFixed(1)}%)
-                          </li>
-                        ))}
-                      </ul>
-                    </>
-                  )}
-                </div>
-              ) : (
+              {!rect.processed ? (
                 <p className="text-gray-500">Processing...</p>
-              )}
+              ) : !rect.image ? (
+                <p className="text-red-500">Failed to extract region</p>
+              ) : null}
             </div>
           ))}
         </div>

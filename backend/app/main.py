@@ -1,15 +1,22 @@
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Dict
 from . import models, schemas
 from .database import engine, get_db
 from .ocr import OCRProcessor
 import os
 import tempfile
 from pydantic import BaseModel
-from typing import Dict, Any
 import json
+from pdf2image import convert_from_path
+from PIL import Image
+import base64
+from dotenv import load_dotenv
+from openai import OpenAI
+
+client = OpenAI()
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -158,25 +165,78 @@ async def process_pdf_region(
             temp_path = temp_file.name
 
         try:
-            # Process the specific region of the PDF using OCR
-            # Coordinates are now already in original PDF space (points)
-            results = ocr_processor.process_pdf_region(
-                temp_path,
-                page_number=bbox['pageNumber'],
-                region={
-                    'x': bbox['startX'],
-                    'y': bbox['startY'],
-                    'width': bbox['width'],
-                    'height': bbox['height']
-                }
-            )
+            # Convert specific PDF page to image
+            dpi = 300  # You can adjust this value for quality vs performance
+            images = convert_from_path(temp_path, dpi=dpi, first_page=bbox['pageNumber'], last_page=bbox['pageNumber'])
+            if not images:
+                raise HTTPException(status_code=500, detail="Could not convert PDF page to image")
             
-            # Clean up the temporary file
+            image = images[0]
+            img_width, img_height = image.size
+            
+            # Convert PDF points to pixels using DPI scaling
+            scale_factor = dpi / 72.0  # Standard PDF point to pixel conversion
+            x = max(0, int(bbox['startX'] * scale_factor))
+            y = max(0, int(bbox['startY'] * scale_factor))
+            width = min(img_width - x, int(bbox['width'] * scale_factor))
+            height = min(img_height - y, int(bbox['height'] * scale_factor))
+            
+            # Validate coordinates
+            if x >= img_width or y >= img_height or width <= 0 or height <= 0:
+                raise HTTPException(status_code=400, detail="Invalid region coordinates")
+            
+            # Crop the image to the specified region
+            region_image = image.crop((x, y, x + width, y + height))
+            
+            # Create a temporary file for the PNG
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as png_file:
+                region_image.save(png_file.name, format='PNG')
+                png_path = png_file.name
+            
+            # Convert PNG to base64 for response
+            with open(png_path, 'rb') as img_file:
+                img_data = img_file.read()
+                img_base64 = base64.b64encode(img_data).decode()
+            
+            # Clean up temporary files
             os.unlink(temp_path)
+            os.unlink(png_path)
+
+            # Only process with GPT-4 Vision if API key is available
+            gpt_response = None
+            img_url = f"data:image/png;base64,{img_base64}"
+            try:
+                gpt_response = client.responses.create(
+                    model="gpt-4.1-mini",
+                    input=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "input_text", "text": "what's in this image?"},
+                                {
+                                    "type": "input_image",
+                                    "image_url": img_url,
+                                },
+                            ],
+                        }
+                    ]
+                )
+            except Exception as e:
+                print(f"OpenAI API error: {str(e)}")
+                gpt_response = None
+
+            return {
+                "success": True,
+                "image": {
+                    "base64": img_base64,
+                    "width": width,
+                    "height": height
+                },
+                "gpt_response": gpt_response
+            }
             
-            return {"success": True, "results": results}
         except Exception as e:
-            # Clean up the temporary file in case of error
+            # Clean up temporary files in case of error
             if os.path.exists(temp_path):
                 os.unlink(temp_path)
             raise HTTPException(status_code=500, detail=str(e))

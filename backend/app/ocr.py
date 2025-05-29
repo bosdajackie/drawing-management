@@ -4,8 +4,19 @@ import numpy as np
 from PIL import Image
 import re
 import os
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, TypedDict
 import pandas as pd
+
+class Coordinates(TypedDict):
+    x: int
+    y: int
+    width: int
+    height: int
+
+class DimensionData(TypedDict):
+    value: str
+    coordinates: Coordinates
+    confidence: Optional[float]
 
 class OCRProcessor:
     def __init__(self, tesseract_cmd: Optional[str] = None):
@@ -43,7 +54,7 @@ class OCRProcessor:
         
         return image
     
-    def _extract_dimensions_with_coords(self, image: Image.Image) -> List[Dict[str, Any]]:
+    def _extract_dimensions_with_coords(self, image: Image.Image) -> List[DimensionData]:
         """
         Extract potential dimension values from OCR text along with their coordinates
         Args:
@@ -57,7 +68,7 @@ class OCRProcessor:
         # Pattern for dimension formats
         dimension_pattern = r'^(?:Ø|⌀)?(\d+(?:[.,]\d+)?(?:\s*(?:mm|cm|m))?)$'
         
-        dimensions = []
+        dimensions: List[DimensionData] = []
         
         # Filter out empty text and non-dimension text
         valid_rows = ocr_data[ocr_data['text'].notna()]
@@ -78,7 +89,7 @@ class OCRProcessor:
                 
         return dimensions
     
-    def process_pdf(self, pdf_path: str, dpi: int = 200) -> Dict[int, List[Dict[str, Any]]]:
+    def process_pdf(self, pdf_path: str, dpi: int = 200) -> Dict[int, List[DimensionData]]:
         """
         Process a PDF file and extract dimensions with coordinates from each page
         Args:
@@ -93,7 +104,7 @@ class OCRProcessor:
         # Convert PDF pages to images
         images = convert_from_path(pdf_path, dpi=dpi)
         
-        results = {}
+        results: Dict[int, List[DimensionData]] = {}
         for i, image in enumerate(images, start=1):
             # Preprocess the image
             processed_image = self._preprocess_image(image)
@@ -106,7 +117,7 @@ class OCRProcessor:
             
         return results
     
-    def process_image(self, image_path: str) -> List[Dict[str, Any]]:
+    def process_image(self, image_path: str) -> List[DimensionData]:
         """
         Process a single image file and extract dimensions with coordinates
         Args:
@@ -213,7 +224,7 @@ class OCRProcessor:
         
         # Look for potential dimensions in the text
         dimension_pattern = r'\b(?:Ø|⌀)?(\d+(?:[.,]\d+)?(?:\s*(?:mm|cm|m))?)\b'
-        potential_dimensions = []
+        potential_dimensions: List[DimensionData] = []
         
         for text_item in detected_text:
             matches = re.finditer(dimension_pattern, text_item['text'], re.IGNORECASE)
