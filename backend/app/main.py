@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from typing import List, Dict
+from typing import List, Literal, Optional
 from . import models, schemas
 from .database import engine, get_db
 from .ocr import OCRProcessor
@@ -41,6 +41,21 @@ class BoundingBox(BaseModel):
     height: float
     scale: float
     pageNumber: int
+
+class DrawingMeasurement(BaseModel):
+    measurement_type: Literal[
+        "linear", "diameter", "radius", "angle", "thread", "tolerance", "surface_finish"
+    ]
+    value: float                           # e.g., 25.4
+    unit: Literal["mm", "in", "deg"]       # common units
+    tolerance_plus: Optional[float] = None # upper limit tolerance (e.g., +0.1)
+    tolerance_minus: Optional[float] = None# lower limit tolerance (e.g., -0.05)
+    location_note: Optional[str] = None    # e.g., "center of hole", "from left edge"
+    notes: Optional[str] = None            # any extra context
+
+process_region_prompt = """
+You are a CAD designer. You are given a screenshot of a dimension within an engineering drawing for an aftermarket car part. Your job is to extract the dimension and its properties from the image, and return it using the Structured Output function. Keep in mind the image might be rotated, as by the nature of engineering drawings. Do not get confused by rotated text. First correctly identify its orientation then extract the dimension.
+"""
 
 @app.get("/dimensions/", response_model=List[schemas.Dimension])
 def get_dimensions(db: Session = Depends(get_db)):
@@ -128,27 +143,6 @@ def search_parts(
     print(f"Returning {len(results)} results")
     return results
 
-@app.post("/api/ocr/process")
-async def process_pdf(file: UploadFile = File(...)):
-    # Create a temporary file to store the uploaded PDF
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
-        content = await file.read()
-        temp_file.write(content)
-        temp_path = temp_file.name
-
-    try:
-        # Process the PDF using OCR
-        results = ocr_processor.process_pdf(temp_path)
-        
-        # Clean up the temporary file
-        os.unlink(temp_path)
-        
-        return {"success": True, "results": results}
-    except Exception as e:
-        # Clean up the temporary file in case of error
-        if os.path.exists(temp_path):
-            os.unlink(temp_path)
-        return {"success": False, "error": str(e)}
 
 @app.post("/api/ocr/process-region")
 async def process_pdf_region(
@@ -204,23 +198,28 @@ async def process_pdf_region(
 
             # Only process with GPT-4 Vision if API key is available
             gpt_response = None
+            parsed_response = None
             img_url = f"data:image/png;base64,{img_base64}"
             try:
-                gpt_response = client.responses.create(
-                    model="gpt-4.1-mini",
+                gpt_response = client.responses.parse(
+                    model="gpt-4o-2024-08-06",
                     input=[
-                        {
-                            "role": "user",
+                        {'role': 'system', 'content': process_region_prompt},
+                        {   
+                            'role': 'user',
                             "content": [
-                                {"type": "input_text", "text": "what's in this image?"},
                                 {
                                     "type": "input_image",
                                     "image_url": img_url,
                                 },
                             ],
                         }
-                    ]
+                    ],
+                    text_format=DrawingMeasurement
                 )
+                if gpt_response:
+                    parsed_response = gpt_response.output_parsed
+                    print(f"Parsed response: {parsed_response}")
             except Exception as e:
                 print(f"OpenAI API error: {str(e)}")
                 gpt_response = None
@@ -232,7 +231,8 @@ async def process_pdf_region(
                     "width": width,
                     "height": height
                 },
-                "gpt_response": gpt_response
+                "gpt_response": gpt_response,
+                "parsed_response": parsed_response
             }
             
         except Exception as e:

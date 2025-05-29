@@ -72,6 +72,15 @@ interface Rectangle {
     height: number;
   };
   gpt_response?: any;
+  parsed_response?: {
+    measurement_type: string;
+    value: number;
+    unit: string;
+    tolerance_plus?: number;
+    tolerance_minus?: number;
+    location_note?: string;
+    notes?: string;
+  };
   originalScale: number;
 }
 
@@ -316,6 +325,7 @@ const DrawingLabelingPage: React.FC = () => {
                 ...rect,
                 image: data.image,
                 gpt_response: data.gpt_response,
+                parsed_response: data.parsed_response,
                 processed: true
               }
             : rect
@@ -587,7 +597,7 @@ const DrawingLabelingPage: React.FC = () => {
                   />
                   <p className="font-semibold mb-2">GPT Response:</p>
                   <pre className="text-sm text-gray-600 p-2 bg-gray-100 rounded">
-                    {JSON.stringify(rect.gpt_response, null, 2)}
+                    {JSON.stringify(rect.parsed_response, null, 2)}
                   </pre>
                 </div>
               )}
