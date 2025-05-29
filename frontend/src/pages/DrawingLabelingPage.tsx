@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Document, Page, pdfjs } from 'react-pdf';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
@@ -8,12 +8,72 @@ import 'react-pdf/dist/esm/Page/TextLayer.css';
 // Initialize PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
+interface OCRTextItem {
+  text: string;
+  confidence: number;
+  coordinates: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+}
+
+interface OCRResults {
+  text: string;
+  detailed_text: OCRTextItem[];
+  dimensions: {
+    value: string;
+    coordinates: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    };
+    confidence: number;
+  }[];
+  region: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  debug_info?: {
+    image_size: {
+      width: number;
+      height: number;
+    };
+    calculated_coords: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    };
+    scale_factor: number;
+  };
+}
+
 interface Rectangle {
   startX: number;
   startY: number;
   width: number;
   height: number;
   scale: number;
+  pageNumber?: number;
+  processed?: boolean;
+  ocrResults?: OCRResults;
+}
+
+interface Dimension {
+  id: number;
+  name: string;
+  value: number;
+}
+
+interface PartType {
+  id: number;
+  name: string;
+  dimensions: Dimension[];
 }
 
 const DrawingLabelingPage: React.FC = () => {
@@ -24,15 +84,21 @@ const DrawingLabelingPage: React.FC = () => {
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [pdfScale, setPdfScale] = useState<number>(1);
-  const [rotation, setRotation] = useState<number>(0);
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [isDrawing, setIsDrawing] = useState(false);
   const [rectangles, setRectangles] = useState<Rectangle[]>([]);
   const [currentRect, setCurrentRect] = useState<Rectangle | null>(null);
+  const [selectedPartType, setSelectedPartType] = useState<number | null>(null);
+  const [partTypes, setPartTypes] = useState<PartType[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Calculate scale when PDF file changes
+  const [originalPdfDimensions, setOriginalPdfDimensions] = useState<{ width: number; height: number } | null>(null);
+
   React.useEffect(() => {
     if (pdfFiles[currentFileIndex]) {
       const loadingTask = pdfjs.getDocument(URL.createObjectURL(pdfFiles[currentFileIndex]));
@@ -40,6 +106,20 @@ const DrawingLabelingPage: React.FC = () => {
         doc.getPage(1).then((page: PDFPageProxy) => {
           const viewport = page.getViewport({ scale: 1 });
           const containerWidth = canvasRef.current?.parentElement?.parentElement?.parentElement?.clientWidth || window.innerWidth * 0.8;
+          
+          // Store original PDF dimensions
+          setOriginalPdfDimensions({
+            width: viewport.width,
+            height: viewport.height
+          });
+
+          console.log('PDF Dimensions:', {
+            originalWidth: viewport.width,
+            originalHeight: viewport.height,
+            containerWidth,
+            calculatedScale: containerWidth / viewport.width
+          });
+          
           setPdfScale(containerWidth / viewport.width);
         });
       });
@@ -87,6 +167,26 @@ const DrawingLabelingPage: React.FC = () => {
 
     setPdfFiles(loadedFiles);
   }, [location.state, navigate]);
+
+  // Fetch part types
+  React.useEffect(() => {
+    const fetchPartTypes = async () => {
+      try {
+        const response = await fetch('http://localhost:8000/part-types/');
+        if (!response.ok) {
+          throw new Error('Failed to fetch part types');
+        }
+        const data = await response.json();
+        setPartTypes(data);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'An error occurred');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchPartTypes();
+  }, []);
 
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
     setNumPages(numPages);
@@ -136,22 +236,124 @@ const DrawingLabelingPage: React.FC = () => {
     });
   };
 
+  const processRectangleOCR = async (rectangle: Rectangle) => {
+    if (!pdfFiles[currentFileIndex] || !originalPdfDimensions) return;
+
+    setIsProcessing(true);
+    setError(null);
+
+    // Add padding to the unscaled coordinates (in PDF points)
+    // Using 10 points as padding (about 3.5mm at 72 DPI)
+    const PADDING = 0;
+
+    // Normalize coordinates to handle rectangles drawn in any direction
+    const normalizedRect = {
+      startX: rectangle.width < 0 ? rectangle.startX + rectangle.width : rectangle.startX,
+      startY: rectangle.height < 0 ? rectangle.startY + rectangle.height : rectangle.startY,
+      width: Math.abs(rectangle.width),
+      height: Math.abs(rectangle.height)
+    };
+
+    const unscaledCoords = {
+      startX: Math.max(0, (normalizedRect.startX / pdfScale) - PADDING),
+      startY: Math.max(0, (normalizedRect.startY / pdfScale) - PADDING),
+      width: Math.min(
+        originalPdfDimensions.width - (normalizedRect.startX / pdfScale),
+        (normalizedRect.width / pdfScale) + (PADDING * 2)
+      ),
+      height: Math.min(
+        originalPdfDimensions.height - (normalizedRect.startY / pdfScale),
+        (normalizedRect.height / pdfScale) + (PADDING * 2)
+      ),
+      pageNumber
+    };
+
+    console.log('Rectangle Coordinates:', {
+      originalCoords: {
+        startX: rectangle.startX,
+        startY: rectangle.startY,
+        width: rectangle.width,
+        height: rectangle.height,
+      },
+      normalizedCoords: normalizedRect,
+      displayCoords: {
+        startX: normalizedRect.startX,
+        startY: normalizedRect.startY,
+        width: normalizedRect.width,
+        height: normalizedRect.height,
+        scale: pdfScale
+      },
+      originalPdfCoords: unscaledCoords,
+      pdfDimensions: originalPdfDimensions,
+      padding: PADDING
+    });
+
+    try {
+      const formData = new FormData();
+      formData.append('file', pdfFiles[currentFileIndex]);
+      formData.append('bbox_data', JSON.stringify(unscaledCoords));
+      
+      const response = await fetch('http://localhost:8000/api/ocr/process-region', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to process OCR');
+      }
+
+      const data = await response.json();
+      console.log('Received OCR results:', data);
+      
+      setRectangles(prev => 
+        prev.map(rect => 
+          rect === rectangle 
+            ? {
+                ...rect,
+                ocrResults: data.results,
+                processed: true
+              }
+            : rect
+        )
+      );
+    } catch (err) {
+      console.error('OCR processing error:', err);
+      setError(err instanceof Error ? err.message : 'An error occurred');
+      setRectangles(prev => 
+        prev.map(rect => 
+          rect === rectangle 
+            ? {
+                ...rect,
+                ocrResults: {
+                  text: 'Error processing OCR',
+                  detailed_text: [],
+                  dimensions: [],
+                  region: { x: 0, y: 0, width: 0, height: 0 }
+                },
+                processed: true
+              }
+            : rect
+        )
+      );
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const stopDrawing = () => {
     if (!isDrawingMode || !currentRect) return;
 
     setIsDrawing(false);
-    console.log('New bounding box:', {
-      x: Math.round(currentRect.startX),
-      y: Math.round(currentRect.startY),
-      width: Math.round(currentRect.width),
-      height: Math.round(currentRect.height),
-      scale: currentRect.scale
-    });
-    setRectangles(prev => [...prev, currentRect]);
+    const newRect = { ...currentRect, pageNumber: pageNumber };
+    setRectangles(prev => [...prev, newRect]);
     setCurrentRect(null);
+
+    // Process OCR for the new rectangle
+    processRectangleOCR(newRect);
   };
 
-  const drawRectangles = () => {
+  const drawRectangles = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -162,15 +364,27 @@ const DrawingLabelingPage: React.FC = () => {
 
     [...rectangles, currentRect].filter(Boolean).forEach(rect => {
       if (!rect) return;
-      ctx.strokeStyle = '#ff0000';
+      
+      // Draw the rectangle
+      ctx.strokeStyle = rect.processed ? '#00ff00' : '#ff0000'; // Green if processed, red if not
       ctx.lineWidth = 2;
       ctx.strokeRect(rect.startX, rect.startY, rect.width, rect.height);
-    });
-  };
 
+      // Add coordinate labels for debugging
+      ctx.fillStyle = '#000000';
+      ctx.font = '12px Arial';
+      ctx.fillText(
+        `(${Math.round(rect.startX/rect.scale)},${Math.round(rect.startY/rect.scale)})`,
+        rect.startX,
+        rect.startY - 5
+      );
+    });
+  }, [rectangles, currentRect]);
+
+  // Update useEffect to include drawRectangles in dependencies
   React.useEffect(() => {
     drawRectangles();
-  }, [rectangles, currentRect]);
+  }, [drawRectangles]); // Now this is safe because drawRectangles is memoized
 
   if (pdfFiles.length === 0) {
     return (
@@ -183,14 +397,20 @@ const DrawingLabelingPage: React.FC = () => {
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] p-4">
       <div className="w-full max-w-6xl">
+        {error && (
+          <div className="mb-4 p-4 bg-red-100 text-red-700 rounded">
+            {error}
+          </div>
+        )}
+
         <div className="flex justify-between mb-4">
           <h1 className="text-3xl font-bold">Label Dimensions</h1>
           <div className="flex gap-4">
             <button
               onClick={() => setIsDrawingMode(!isDrawingMode)}
               className={`px-4 py-2 rounded ${isDrawingMode
-                  ? 'bg-green-500 text-white'
-                  : 'bg-gray-200 hover:bg-gray-300'
+                ? 'bg-green-500 text-white'
+                : 'bg-gray-200 hover:bg-gray-300'
                 }`}
               title={isDrawingMode ? "Drawing Mode On (Ctrl+Z to undo)" : "Drawing Mode Off"}
             >
@@ -211,6 +431,7 @@ const DrawingLabelingPage: React.FC = () => {
             </button>
           </div>
         </div>
+
         <div className="mb-4 flex gap-4 items-center justify-center">
           <select
             value={currentFileIndex}
@@ -289,10 +510,97 @@ const DrawingLabelingPage: React.FC = () => {
                 />
               </div>
             </div>
+
           </div>
+
+        </div>
+      </div>
+      <div className="flex-1 max-w-xs">
+        <select
+          value={selectedPartType || ''}
+          onChange={(e) => setSelectedPartType(e.target.value ? parseInt(e.target.value) : null)}
+          className="w-full px-3 py-2 border rounded"
+          disabled={isLoading}
+        >
+          <option value="">Select a part type</option>
+          {partTypes.map((type) => (
+            <option key={type.id} value={type.id}>
+              {type.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Add OCR Results Display */}
+      <div className="w-full max-w-6xl mt-4">
+        <h2 className="text-xl font-bold mb-2">OCR Results</h2>
+        {isProcessing && (
+          <div className="flex items-center justify-center p-4">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+          </div>
+        )}
+        {error && (
+          <div className="p-4 bg-red-100 text-red-700 rounded mb-4">
+            {error}
+          </div>
+        )}
+        <div className="space-y-4">
+          {rectangles.map((rect, index) => (
+            <div key={index} className="p-4 border rounded">
+              <h3 className="font-bold">Rectangle {index + 1}</h3>
+              <div className="text-sm text-gray-600 mb-2">
+                PDF Coordinates: ({Math.round(rect.startX/rect.scale)}, {Math.round(rect.startY/rect.scale)})
+                Size: {Math.round(rect.width/rect.scale)}x{Math.round(rect.height/rect.scale)}
+              </div>
+              {rect.ocrResults?.debug_info && (
+                <div className="text-xs font-mono bg-gray-100 p-2 rounded mb-2">
+                  <div>Image size: {rect.ocrResults.debug_info.image_size.width}x{rect.ocrResults.debug_info.image_size.height}</div>
+                  <div>Calculated region: ({rect.ocrResults.debug_info.calculated_coords.x}, {rect.ocrResults.debug_info.calculated_coords.y}) - {rect.ocrResults.debug_info.calculated_coords.width}x{rect.ocrResults.debug_info.calculated_coords.height}</div>
+                  <div>Scale factor: {rect.ocrResults.debug_info.scale_factor}</div>
+                </div>
+              )}
+              {rect.ocrResults ? (
+                <div>
+                  <p className="font-semibold mt-2">Detected Text:</p>
+                  <p className="font-mono bg-gray-50 p-2 rounded whitespace-pre-wrap">{rect.ocrResults.text}</p>
+                  
+                  <p className="font-semibold mt-4">Detailed Text:</p>
+                  <div className="space-y-2">
+                    {rect.ocrResults.detailed_text.map((item, idx) => (
+                      <div key={idx} className="bg-gray-50 p-2 rounded">
+                        <span className="font-mono">{item.text}</span>
+                        <span className="text-sm text-gray-500 ml-2">
+                          (confidence: {item.confidence.toFixed(1)}%)
+                        </span>
+                        <div className="text-xs text-gray-400">
+                          at ({item.coordinates.x}, {item.coordinates.y})
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {rect.ocrResults.dimensions.length > 0 && (
+                    <>
+                      <p className="font-semibold mt-4">Detected Dimensions:</p>
+                      <ul className="list-disc list-inside">
+                        {rect.ocrResults.dimensions.map((dim, dimIndex) => (
+                          <li key={dimIndex}>
+                            {dim.value} (confidence: {dim.confidence.toFixed(1)}%)
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <p className="text-gray-500">Processing...</p>
+              )}
+            </div>
+          ))}
         </div>
       </div>
     </div>
+
   );
 };
 
