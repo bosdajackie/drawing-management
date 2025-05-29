@@ -62,6 +62,7 @@ interface Rectangle {
   pageNumber?: number;
   processed?: boolean;
   ocrResults?: OCRResults;
+  originalScale: number;
 }
 
 interface Dimension {
@@ -210,11 +211,12 @@ const DrawingLabelingPage: React.FC = () => {
 
     setIsDrawing(true);
     setCurrentRect({
-      startX: x,
-      startY: y,
+      startX: x / pdfScale,
+      startY: y / pdfScale,
       width: 0,
       height: 0,
-      scale: 1
+      scale: pdfScale,
+      originalScale: pdfScale
     });
   };
 
@@ -230,8 +232,8 @@ const DrawingLabelingPage: React.FC = () => {
       if (!prev) return null;
       return {
         ...prev,
-        width: x - prev.startX,
-        height: y - prev.startY
+        width: (x / pdfScale) - prev.startX,
+        height: (y / pdfScale) - prev.startY
       };
     });
   };
@@ -365,21 +367,27 @@ const DrawingLabelingPage: React.FC = () => {
     [...rectangles, currentRect].filter(Boolean).forEach(rect => {
       if (!rect) return;
       
+      // Draw the rectangle using scaled coordinates
+      const scaledX = rect.startX * pdfScale;
+      const scaledY = rect.startY * pdfScale;
+      const scaledWidth = rect.width * pdfScale;
+      const scaledHeight = rect.height * pdfScale;
+      
       // Draw the rectangle
       ctx.strokeStyle = rect.processed ? '#00ff00' : '#ff0000'; // Green if processed, red if not
       ctx.lineWidth = 2;
-      ctx.strokeRect(rect.startX, rect.startY, rect.width, rect.height);
+      ctx.strokeRect(scaledX, scaledY, scaledWidth, scaledHeight);
 
       // Add coordinate labels for debugging
       ctx.fillStyle = '#000000';
       ctx.font = '12px Arial';
       ctx.fillText(
-        `(${Math.round(rect.startX/rect.scale)},${Math.round(rect.startY/rect.scale)})`,
-        rect.startX,
-        rect.startY - 5
+        `(${Math.round(rect.startX)},${Math.round(rect.startY)})`,
+        scaledX,
+        scaledY - 5
       );
     });
-  }, [rectangles, currentRect]);
+  }, [rectangles, currentRect, pdfScale]);
 
   // Update useEffect to include drawRectangles in dependencies
   React.useEffect(() => {
@@ -433,6 +441,17 @@ const DrawingLabelingPage: React.FC = () => {
         </div>
 
         <div className="mb-4 flex gap-4 items-center justify-center">
+          <button
+            onClick={() => setPdfScale(prev => Math.min(2, prev + 0.1))}
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+            Zoom In
+          </button>
+          <button
+            onClick={() => setPdfScale(prev => Math.max(0.5, prev - 0.1))}
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+            Zoom Out
+          </button>
+          
           <select
             value={currentFileIndex}
             onChange={handleFileChange}
