@@ -64,8 +64,30 @@ class DrawingMeasurement(BaseModel):
     gdt: Optional[GDTFeatureControlFrame] = None
 
 process_region_prompt = """
-You are a CAD designer. You are given a screenshot of a dimension within an engineering drawing for an aftermarket car part. Your job is to extract the dimension and its properties from the image, and return it using the Structured Output function. Keep in mind the image might be rotated, as by the nature of engineering drawings. Do not get confused by rotated text. First correctly identify its orientation then extract the dimension.
-The measurement may be a GD&T dimension. If that is the case, the measurement_type will be "gd&t". There is a nested 'gdt' field in the structured output that will contain the gdt properties symbol, tolerance, unit, and optional datum_reference_frame.
+You are a CAD designer analyzing engineering drawings. You are given a screenshot of a dimension within an engineering drawing for an aftermarket car part. The image may be rotated at any angle (0°, 90°, 180°, 270°) relative to its natural reading orientation.
+
+Follow these steps:
+1. First, determine the correct orientation of the text/numbers in the image. Look for:
+   - The natural reading direction of numbers
+   - The orientation of dimension lines and arrows
+   - The position of tolerance symbols (±, ⌀, etc.)
+   
+2. Once you've determined the correct orientation, identify:
+   - The main measurement value
+   - Any tolerance values (+ and - values)
+   - The measurement type (linear, diameter, radius, etc.)
+   - The unit of measurement (mm, in, etc.)
+   - Any additional notes or location references
+
+3. If you see GD&T symbols (geometric dimensioning and tolerancing):
+   - Identify the specific GD&T symbol
+   - Note the tolerance value
+   - Record any datum references (A, B, C, etc.)
+
+Return the information using the Structured Output function. Be especially careful with:
+- Numbers that might appear upside down or sideways
+- Distinguishing between similar-looking numbers when rotated (6/9, 2/5, etc.)
+- The direction of tolerance values (+ vs -)
 """
 
 @app.get("/dimensions/", response_model=List[schemas.Dimension])
