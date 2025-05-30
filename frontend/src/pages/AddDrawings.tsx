@@ -1,17 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-interface OCRResult {
-  value: string;
-  coordinates: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  };
-  confidence: number;
-}
-
 interface UploadingFile {
   file: File;
   progress: 'waiting' | 'processing' | 'complete' | 'error';
@@ -21,7 +10,6 @@ interface UploadingFile {
 const AddDrawings: React.FC = () => {
   const navigate = useNavigate();
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
-  const [ocrResults, setOCRResults] = useState<Record<number, OCRResult[]>>({});
   const [isUploading, setIsUploading] = useState(false);
 
   // Check if all files are complete and navigate
