@@ -36,6 +36,19 @@ const AddDrawings: React.FC = () => {
     }
   }, [uploadingFiles, navigate]);
 
+  const handleContinueWithSuccessful = () => {
+    const successfulFiles = uploadingFiles.filter(f => f.progress === 'complete');
+    navigate('/drawings/labeling', {
+      state: { 
+        fileCount: successfulFiles.length,
+        fileNames: successfulFiles.map(f => f.file.name)
+      }
+    });
+  };
+
+  const hasSuccessfulFiles = uploadingFiles.some(f => f.progress === 'complete');
+  const hasFailedFiles = uploadingFiles.some(f => f.progress === 'error');
+
   const processFile = async (file: File, index: number) => {
     try {
       // Update file status to processing
@@ -168,6 +181,18 @@ const AddDrawings: React.FC = () => {
                   </div>
                 ))}
               </div>
+
+              {/* Show continue button when there are both successful and failed files */}
+              {hasSuccessfulFiles && hasFailedFiles && (
+                <div className="mt-6 flex justify-center">
+                  <button
+                    onClick={handleContinueWithSuccessful}
+                    className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                  >
+                    Continue with Successful Files ({uploadingFiles.filter(f => f.progress === 'complete').length})
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

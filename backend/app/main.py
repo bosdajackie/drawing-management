@@ -5,7 +5,6 @@ from sqlalchemy.orm import Session
 from typing import List, Literal, Optional
 from . import models, schemas
 from .database import engine, get_db
-from .ocr import OCRProcessor
 import os
 import tempfile
 from pydantic import BaseModel
@@ -30,9 +29,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Initialize OCR processor
-ocr_processor = OCRProcessor()
 
 class BoundingBox(BaseModel):
     startX: float
@@ -159,7 +155,7 @@ def search_parts(
     return results
 
 
-@app.post("/api/ocr/process-region")
+@app.post("/api/process-region")
 async def process_pdf_region(
     file: UploadFile = File(...),
     bbox_data: str = Form(...)

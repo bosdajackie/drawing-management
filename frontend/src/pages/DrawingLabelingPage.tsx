@@ -255,7 +255,7 @@ const DrawingLabelingPage: React.FC = () => {
       formData.append('file', pdfFiles[currentFileIndex]);
       formData.append('bbox_data', JSON.stringify(unscaledCoords));
       
-      const response = await fetch('http://localhost:8000/api/ocr/process-region', {
+      const response = await fetch('http://localhost:8000/api/process-region', {
         method: 'POST',
         body: formData
       });
