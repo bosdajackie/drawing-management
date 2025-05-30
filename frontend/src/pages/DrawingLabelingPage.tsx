@@ -8,56 +8,6 @@ import 'react-pdf/dist/esm/Page/TextLayer.css';
 // Initialize PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
-interface OCRTextItem {
-  text: string;
-  confidence: number;
-  coordinates: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  };
-}
-
-interface OCRResults {
-  text: string;
-  detailed_text: OCRTextItem[];
-  dimensions: {
-    value: string;
-    coordinates: {
-      x: number;
-      y: number;
-      width: number;
-      height: number;
-    };
-    confidence: number;
-  }[];
-  region: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  };
-  debug_info?: {
-    image_size: {
-      width: number;
-      height: number;
-    };
-    calculated_coords: {
-      x: number;
-      y: number;
-      width: number;
-      height: number;
-    };
-    scale_factor: number;
-  };
-  image?: {
-    base64: string;
-    width: number;
-    height: number;
-  };
-}
-
 interface Rectangle {
   startX: number;
   startY: number;
